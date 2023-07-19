@@ -7,7 +7,7 @@ def get_all_log_paths(search_root = '.', file_ext = '.bin'):
     path_list = []
     for root, _, files in os.walk(search_root, topdown=False):
         for filename in files:
-            if(filename.endswith(file_ext)):
+            if(filename.lower().endswith(file_ext.lower())):
                 log_path = os.path.join(root, filename)
                 path_list.append(log_path)
     return path_list
