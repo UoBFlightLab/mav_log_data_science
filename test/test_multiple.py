@@ -1,4 +1,4 @@
-from log_utils import get_all_log_paths, import_log_set, get_flight_times, get_total_flight_time
+from mav_log_data_science import get_all_log_paths, import_log_set, get_flight_times, get_total_flight_time
 
 def test_multiple():
     path_list = get_all_log_paths()

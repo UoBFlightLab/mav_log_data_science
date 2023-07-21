@@ -1,7 +1,7 @@
-from log_utils import import_log, df_log_duration_seconds, add_real_time_from_filename, add_real_time_from_gps, get_total_flight_time
+from mav_log_data_science import import_log, df_log_duration_seconds, add_real_time_from_filename, add_real_time_from_gps, get_total_flight_time
 
 def test_ardupilot():
-    df = import_log('examples/ardupilot/2023-07-06 10-12-18.bin', include_types=['PARM','MODE','GPS','POS','MAVC'])
+    df = import_log('test/examples/ardupilot/2023-07-06 10-12-18.bin', include_types=['PARM','MODE','GPS','POS','MAVC'])
     print(df.shape)
     assert(df.shape==(2498, 49))
     log_duration = df_log_duration_seconds(df)
