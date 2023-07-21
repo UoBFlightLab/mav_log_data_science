@@ -2,6 +2,7 @@ from pymavlink import mavutil
 import pandas as pd
 from datetime import datetime, timedelta
 import os
+from argparse import ArgumentParser
 
 def get_all_log_paths(search_root = '.', file_ext = '.bin'):
     path_list = []
@@ -147,3 +148,75 @@ def get_total_flight_time(df):
 
 def by_msg_type(df,msg_type):
     return(df[df['Type']==msg_type])
+
+def main(search_path='.',
+         input_file=None,
+         summary_file='summary.csv',
+         output_file=None,
+         messages=['PARM']):
+    num_files = 0
+    if summary_file:
+        if os.path.isfile(summary_file):
+            summary_df = pd.read_csv(summary_file)
+        else:
+            summary_df = pd.DataFrame(columns=['file','flight_time','log_time','file_size'])
+    else:
+        if output_file is None:
+            print('Must provide at least one of summary or output file.')
+            return
+    if input_file:
+        print(f'Loading {messages} from "{input_file}"')
+        this_df = import_log(input_file, include_types=messages)
+        if 'GPS' in messages:
+            this_df = add_real_time_from_gps(this_df)
+        num_files = 1
+        if summary_file:
+            summary_df = pd.concat([summary_df,
+                                    pd.DataFrame([{'file': input_file,
+                                                    'flight_time': get_total_flight_time(this_df),
+                                                    'log_time': df_log_duration_seconds(this_df),
+                                                    'file_size': os.stat(input_file).st_size}])])
+            summary_df.to_csv(summary_file)
+        if output_file:
+            this_df.to_csv(output_file)
+    elif search_path:
+        print(f'Searching "{search_path}" for log files.')
+        file_list = get_all_log_paths(search_root=search_path)
+        for (ii,fn) in enumerate(file_list):
+            if summary_file:
+                if any(summary_df['file']==fn):
+                    print(f'Already done {fn}')
+                    continue
+            print(f'Loading {messages} from "{fn}"')
+            this_df = import_log(fn, include_types=messages)
+            if 'GPS' in messages:
+                this_df = add_real_time_from_gps(this_df)
+            num_files += 1
+            if summary_file:
+                summary_df = pd.concat([summary_df,
+                                        pd.DataFrame([{'file': fn,
+                                                        'flight_time': get_total_flight_time(this_df),
+                                                        'log_time': df_log_duration_seconds(this_df),
+                                                        'file_size': os.stat(fn).st_size}])])
+                summary_df.to_csv(summary_file)
+            if output_file:
+                this_ofile = f'{output_file}_{ii:03d}.csv'
+                this_df.to_csv(this_ofile)
+    return num_files
+
+
+
+if __name__=='__main__':
+    parser = ArgumentParser(prog='mav_log_data_science',
+                            description='Process MAV log file(s)')
+    parser.add_argument('-p','--path',help='Search path',default='.')
+    parser.add_argument('-i','--input',help='Input file',default=None)
+    parser.add_argument('-s','--summary',help='Summary file',default='summary.csv')
+    parser.add_argument('-o','--output',help='Output file',default=None)
+    parser.add_argument('-m','--messages',help='Messages to import',default=['PARM'], nargs='*')
+    args = parser.parse_args()
+    main(args.path,
+         args.input,
+         args.summary,
+         args.output,
+         args.messages)
