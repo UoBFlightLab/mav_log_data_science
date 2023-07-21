@@ -1,14 +1,14 @@
-from pymavlink import mavutil
-import pandas as pd
 from datetime import datetime, timedelta
 import os
 from argparse import ArgumentParser
+import pandas as pd
+from pymavlink import mavutil
 
 def get_all_log_paths(search_root = '.', file_ext = '.bin'):
     path_list = []
     for root, _, files in os.walk(search_root, topdown=False):
         for filename in files:
-            if(filename.lower().endswith(file_ext.lower())):
+            if filename.lower().endswith(file_ext.lower()):
                 log_path = os.path.join(root, filename)
                 path_list.append(log_path)
     return path_list
@@ -86,68 +86,71 @@ def import_log(file_path, include_types = None, exclude_types = ['FMT','ISBD'], 
     print(f'Got {df_index} records from {full_path}')
     return log_df
 
-def get_log_start_us(df):
-    return int(df.iloc[0].TimeUS)
+def get_log_start_us(this_df):
+    return int(this_df.iloc[0].TimeUS)
 
-def df_log_duration_seconds(df):
-    duration_us = int(df.iloc[-1].TimeUS) - get_log_start_us(df)
+def df_log_duration_seconds(this_df):
+    duration_us = int(this_df.iloc[-1].TimeUS) - get_log_start_us(this_df)
     log_duration = timedelta(microseconds=duration_us).total_seconds()
     return log_duration
 
-def add_real_time_from_filename(df):
-    filename = df.iloc[0].FilePath
+def add_real_time_from_filename(this_df):
+    filename = this_df.iloc[0].FilePath
     filename_start_time = get_time_from_filename(filename)
     if filename_start_time:
-        log_epoch = filename_start_time - timedelta(microseconds=get_log_start_us(df))
-        df['TimeFilename'] = [log_epoch + timedelta(microseconds=int(t)) for t in df['TimeUS']]
-    return df
-    
-def add_real_time_from_gps(df):
+        log_epoch = filename_start_time - timedelta(microseconds=get_log_start_us(this_df))
+        this_df['TimeFilename'] = [log_epoch + timedelta(microseconds=int(t)) for t in this_df['TimeUS']]
+    return this_df
+
+def add_real_time_from_gps(this_df):
     gps_epoch = datetime.fromisoformat('1980-01-06')
-    if 'GPS_GMS' in df.columns:
-        first_gps_msg = df[df['Type']=='GPS'].iloc[0]
-        first_gps_time = gps_epoch + timedelta(weeks=first_gps_msg.GPS_GWk, milliseconds=first_gps_msg.GPS_GMS)
+    if 'GPS_GMS' in this_df.columns:
+        first_gps_msg = this_df[this_df['Type']=='GPS'].iloc[0]
+        first_gps_time = gps_epoch + timedelta(weeks=first_gps_msg.GPS_GWk,
+                                               milliseconds=first_gps_msg.GPS_GMS)
         log_epoch = first_gps_time - timedelta(microseconds=int(first_gps_msg.TimeUS))
-        df['TimeGPS'] = [log_epoch + timedelta(microseconds=int(t)) for t in df['TimeUS']]
-    return df
-    
-def import_log_set(path_list, include_types = ['PARM','MODE','GPS','POS','MAVC','CMD'], exclude_types = ['FMT','ISBD'], memory=False):
+        this_df['TimeGPS'] = [log_epoch + timedelta(microseconds=int(t)) for t in this_df['TimeUS']]
+    return this_df
+
+def import_log_set(path_list,
+                   include_types = ['PARM','MODE','GPS','POS','MAVC','CMD'],
+                   exclude_types = ['FMT','ISBD'], memory=False):
     df_list = []
     for file_name in path_list:
-        df = import_log(file_name,
-                        include_types=include_types,
-                        exclude_types=exclude_types,
-                        memory=memory)
-        df = add_real_time_from_filename(df)
-        df = add_real_time_from_gps(df)
-        df_list.append(df)
+        this_df = import_log(file_name,
+                             include_types=include_types,
+                             exclude_types=exclude_types,
+                             memory=memory)
+        this_df = add_real_time_from_filename(this_df)
+        this_df = add_real_time_from_gps(this_df)
+        df_list.append(this_df)
     all_df = pd.concat(df_list)
     return all_df
 
-def get_drone_ids(df):
-    drone_ids = set([id for id in df['DroneID'] if id is not None])
+def get_drone_ids(this_df):
+    drone_ids = set([id for id in this_df['DroneID'] if id is not None])
     return drone_ids
 
-def get_files(df):
-    files = set(df['FilePath'])
+def get_files(this_df):
+    files = set(this_df['FilePath'])
     return files
 
-def get_flight_times(df):
-    files = get_files(df)
+def get_flight_times(this_df):
+    files = get_files(this_df)
     results = {}
-    flight_stat_df = df[df['PARM_Name']=='STAT_FLTTIME']
-    for f in files:
-        file_stats_df = flight_stat_df[flight_stat_df['FilePath']==f]
+    flight_stat_df = this_df[this_df['PARM_Name']=='STAT_FLTTIME']
+    for fn in files:
+        file_stats_df = flight_stat_df[flight_stat_df['FilePath']==fn]
         file_flight_time = max(file_stats_df['PARM_Value']) - min(file_stats_df['PARM_Value'])
-        results[f] = file_flight_time
+        results[fn] = file_flight_time
     return results
 
-def get_total_flight_time(df):
-    time_res = get_flight_times(df)
+def get_total_flight_time(this_df):
+    time_res = get_flight_times(this_df)
     return sum(time_res.values())
 
-def by_msg_type(df,msg_type):
-    return(df[df['Type']==msg_type])
+def by_msg_type(this_df,msg_type):
+    return this_df[this_df['Type']==msg_type]
 
 def main(search_path='.',
          input_file=None,
@@ -155,50 +158,46 @@ def main(search_path='.',
          output_file=None,
          messages=['PARM']):
     num_files = 0
-    if summary_file:
-        if os.path.isfile(summary_file):
-            summary_df = pd.read_csv(summary_file)
-        else:
-            summary_df = pd.DataFrame(columns=['file','flight_time','log_time','file_size'])
+    if os.path.isfile(summary_file):
+        summary_df = pd.read_csv(summary_file)
     else:
-        if output_file is None:
-            print('Must provide at least one of summary or output file.')
-            return
+        summary_df = pd.DataFrame(columns=['file','flight_time','log_time','file_size'])
     if input_file:
         print(f'Loading {messages} from "{input_file}"')
         this_df = import_log(input_file, include_types=messages)
         if 'GPS' in messages:
             this_df = add_real_time_from_gps(this_df)
         num_files = 1
-        if summary_file:
-            summary_df = pd.concat([summary_df,
-                                    pd.DataFrame([{'file': input_file,
-                                                    'flight_time': get_total_flight_time(this_df),
-                                                    'log_time': df_log_duration_seconds(this_df),
-                                                    'file_size': os.stat(input_file).st_size}])])
-            summary_df.to_csv(summary_file)
+        summary_df = pd.concat([summary_df,
+                                pd.DataFrame([{'file': input_file,
+                                                'flight_time': get_total_flight_time(this_df),
+                                                'log_time': df_log_duration_seconds(this_df),
+                                                'file_size': os.stat(input_file).st_size}])])
+        summary_df.to_csv(summary_file)
         if output_file:
             this_df.to_csv(output_file)
     elif search_path:
         print(f'Searching "{search_path}" for log files.')
         file_list = get_all_log_paths(search_root=search_path)
         for (ii,fn) in enumerate(file_list):
-            if summary_file:
-                if any(summary_df['file']==fn):
-                    print(f'Already done {fn}')
-                    continue
+            if any(summary_df['file']==fn):
+                print(f'Already done {fn}')
+                continue
             print(f'Loading {messages} from "{fn}"')
             this_df = import_log(fn, include_types=messages)
             if 'GPS' in messages:
                 this_df = add_real_time_from_gps(this_df)
             num_files += 1
-            if summary_file:
-                summary_df = pd.concat([summary_df,
-                                        pd.DataFrame([{'file': fn,
-                                                        'flight_time': get_total_flight_time(this_df),
-                                                        'log_time': df_log_duration_seconds(this_df),
-                                                        'file_size': os.stat(fn).st_size}])])
-                summary_df.to_csv(summary_file)
+            try:
+                flight_time = get_total_flight_time(this_df)
+            except ValueError:
+                flight_time = 0.0
+            summary_df = pd.concat([summary_df,
+                                    pd.DataFrame([{'file': fn,
+                                                    'flight_time': flight_time,
+                                                    'log_time': df_log_duration_seconds(this_df),
+                                                    'file_size': os.stat(fn).st_size}])])
+            summary_df.to_csv(summary_file)
             if output_file:
                 this_ofile = f'{output_file}_{ii:03d}.csv'
                 this_df.to_csv(this_ofile)
